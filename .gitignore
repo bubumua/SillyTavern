@@ -64,3 +64,18 @@ config.*yaml
 explain.md
 preset_and_chara/__pycache__/
 preset_and_chara/.vscode/
+default-user/assets/
+default-user/backgrounds/
+default-user/backups/
+default-user/characters/Seraphina/
+default-user/characters/default_Seraphina.png
+default-user/group chats/
+default-user/groups/
+default-user/instruct/
+default-user/KoboldAI Settings/
+default-user/NovelAI Settings/
+default-user/sysprompt/
+default-user/TextGen Settings/
+default-user/thumbnails/
+default-user/content.log
+default-user/image-metadata.json
