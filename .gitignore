@@ -62,3 +62,5 @@ test-results/
 # custom
 config.*yaml
 explain.md
+preset_and_chara/__pycache__/
+preset_and_chara/.vscode/
