@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SillyTavern Character Card Editor</title>
+    <link rel="stylesheet" href="/css/character-card-editor.css">
+</head>
+<body>
+    <div class="editor-shell">
+        <header class="hero">
+            <div class="hero-copy">
+                <p class="eyebrow">SillyTavern Character Card Workbench</p>
+                <h1>角色卡可视化编辑器</h1>
+                <p class="lede">
+                    面向大型角色卡的本地编辑页。读取 JSON 后，可以按卡片元数据、世界书词条、正则脚本三个维度可视化修改，再导出新的角色卡文件。
+                </p>
+            </div>
+            <div class="hero-actions">
+                <label class="button button-primary file-button">
+                    读取 JSON
+                    <input id="fileInput" type="file" accept=".json,application/json" hidden>
+                </label>
+                <button id="reloadButton" class="button button-secondary" type="button" disabled>恢复载入版本</button>
+                <button id="exportButton" class="button button-accent" type="button" disabled>导出 JSON</button>
+            </div>
+        </header>
+
+        <section class="banner-row">
+            <div id="fileBadge" class="status-pill">未载入文件</div>
+            <div id="dirtyBadge" class="status-pill">未修改</div>
+            <div id="tabSummary" class="status-pill">请选择角色卡 JSON</div>
+        </section>
+
+        <div id="messageBanner" class="message-banner" hidden></div>
+
+        <section class="stats-grid">
+            <article class="stat-card">
+                <span class="stat-label">角色卡名称</span>
+                <strong id="cardNameStat" class="stat-value">未载入</strong>
+                <span id="cardSpecStat" class="stat-meta">等待文件</span>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">世界书词条</span>
+                <strong id="entryCountStat" class="stat-value">0</strong>
+                <span id="entryMetaStat" class="stat-meta">启用 0 / 常驻 0</span>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">正则脚本</span>
+                <strong id="regexCountStat" class="stat-value">0</strong>
+                <span id="regexMetaStat" class="stat-meta">启用 0 / PromptOnly 0</span>
+            </article>
+            <article class="stat-card">
+                <span class="stat-label">当前文件</span>
+                <strong id="fileNameStat" class="stat-value">未载入</strong>
+                <span id="fileSizeStat" class="stat-meta">0 KB</span>
+            </article>
+        </section>
+
+        <section class="workspace">
+            <aside class="panel sidebar">
+                <div class="tabbar" role="tablist" aria-label="Editor tabs">
+                    <button class="tab-button active" type="button" data-tab="meta">卡片概览</button>
+                    <button class="tab-button" type="button" data-tab="entries">世界书词条</button>
+                    <button class="tab-button" type="button" data-tab="regex">正则脚本</button>
+                </div>
+
+                <section id="metaSidebar" class="sidebar-section" hidden></section>
+
+                <section id="listSidebar" class="sidebar-section" hidden>
+                    <div class="list-controls">
+                        <div class="control-group">
+                            <label for="listSearch">搜索</label>
+                            <input id="listSearch" type="search" class="text-input" placeholder="">
+                        </div>
+                        <div class="control-row">
+                            <div class="control-group">
+                                <label for="listFilterOne" id="filterOneLabel">筛选一</label>
+                                <select id="listFilterOne" class="text-input"></select>
+                            </div>
+                            <div class="control-group">
+                                <label for="listFilterTwo" id="filterTwoLabel">筛选二</label>
+                                <select id="listFilterTwo" class="text-input"></select>
+                            </div>
+                        </div>
+                        <div class="control-group">
+                            <label for="listSort">排序</label>
+                            <select id="listSort" class="text-input"></select>
+                        </div>
+                    </div>
+
+                    <div class="list-toolbar">
+                        <button id="addItemButton" class="button button-primary" type="button" disabled>新增</button>
+                        <button id="duplicateItemButton" class="button button-secondary" type="button" disabled>复制</button>
+                        <button id="deleteItemButton" class="button button-danger" type="button" disabled>删除</button>
+                    </div>
+
+                    <div id="listCount" class="list-count">暂无数据</div>
+                    <div id="itemList" class="item-list" aria-live="polite"></div>
+                </section>
+
+                <section class="sidebar-section sidebar-footer-notes">
+                    <div class="sidebar-note">
+                        <h2>使用说明</h2>
+                        <p>1. 通过顶部按钮读取本地角色卡 JSON。</p>
+                        <p>2. 在左侧切换视图，右侧编辑表单会随选中对象切换。</p>
+                        <p>3. 复杂字段可以直接在“高级 JSON”里整条应用。</p>
+                        <p>4. 导出后会下载一个格式化过的新 JSON，不会覆盖原文件。</p>
+                    </div>
+                    <div class="sidebar-note">
+                        <h2>当前页覆盖范围</h2>
+                        <p>支持编辑常用角色卡元数据、`character_book.entries`、`regex_scripts`。</p>
+                        <p>其余未显式展示的字段会原样保留，不会在导出时丢失。</p>
+                    </div>
+                </section>
+            </aside>
+
+            <section class="panel detail-panel">
+                <div id="emptyState" class="empty-state">
+                    <h2>等待载入角色卡</h2>
+                    <p>读取一个 SillyTavern 角色卡 JSON 后，这里会显示可编辑的结构化表单。</p>
+                </div>
+
+                <form id="metaForm" class="editor-form" hidden>
+                    <div class="form-header">
+                        <div>
+                            <p class="section-kicker">Card Meta</p>
+                            <h2>卡片概览与常用字段</h2>
+                        </div>
+                    </div>
+
+                    <section class="section-card">
+                        <div class="field-grid two-columns">
+                            <label class="field">
+                                <span>角色名</span>
+                                <input id="metaName" type="text" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>标签</span>
+                                <input id="metaTags" type="text" class="text-input" placeholder="用逗号分隔">
+                            </label>
+                        </div>
+                        <label class="field">
+                            <span>描述</span>
+                            <textarea id="metaDescription" class="text-area small-area"></textarea>
+                        </label>
+                        <div class="field-grid two-columns">
+                            <label class="field">
+                                <span>性格</span>
+                                <textarea id="metaPersonality" class="text-area small-area"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>场景</span>
+                                <textarea id="metaScenario" class="text-area small-area"></textarea>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section class="section-card">
+                        <label class="field">
+                            <span>首条消息</span>
+                            <textarea id="metaFirstMessage" class="text-area medium-area"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>示例消息</span>
+                            <textarea id="metaMessageExample" class="text-area medium-area"></textarea>
+                        </label>
+                    </section>
+
+                    <section class="section-card">
+                        <label class="field">
+                            <span>系统提示词</span>
+                            <textarea id="metaSystemPrompt" class="text-area medium-area"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>历史后指令</span>
+                            <textarea id="metaPostHistoryInstructions" class="text-area medium-area"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>作者备注</span>
+                            <textarea id="metaCreatorNotes" class="text-area small-area"></textarea>
+                        </label>
+                    </section>
+                </form>
+
+                <form id="entryForm" class="editor-form" hidden>
+                    <div class="form-header">
+                        <div>
+                            <p id="entryIdentity" class="section-kicker">Entry</p>
+                            <h2 id="entryHeading">世界书词条</h2>
+                        </div>
+                    </div>
+
+                    <section class="section-card">
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>ID</span>
+                                <input id="entryId" type="text" class="text-input" readonly>
+                            </label>
+                            <label class="field">
+                                <span>注释名</span>
+                                <input id="entryComment" type="text" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>插入区段</span>
+                                <select id="entryPosition" class="text-input">
+                                    <option value="before_char">before_char</option>
+                                    <option value="after_char">after_char</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>插入顺序</span>
+                                <input id="entryInsertionOrder" type="number" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>显示顺序</span>
+                                <input id="entryDisplayIndex" type="number" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>深度</span>
+                                <input id="entryDepth" type="number" class="text-input">
+                            </label>
+                        </div>
+                        <div class="toggle-grid">
+                            <label class="toggle-field"><input id="entryEnabled" type="checkbox"> 启用</label>
+                            <label class="toggle-field"><input id="entryConstant" type="checkbox"> 常驻 constant</label>
+                            <label class="toggle-field"><input id="entrySelective" type="checkbox"> selective</label>
+                            <label class="toggle-field"><input id="entryUseRegex" type="checkbox"> use_regex</label>
+                        </div>
+                    </section>
+
+                    <section class="section-card">
+                        <div class="field-grid two-columns">
+                            <label class="field">
+                                <span>主关键词</span>
+                                <textarea id="entryKeys" class="text-area small-area" placeholder="支持逗号或换行分隔"></textarea>
+                            </label>
+                            <label class="field">
+                                <span>次关键词</span>
+                                <textarea id="entrySecondaryKeys" class="text-area small-area" placeholder="支持逗号或换行分隔"></textarea>
+                            </label>
+                        </div>
+                        <label class="field">
+                            <span>内容</span>
+                            <textarea id="entryContent" class="text-area large-area"></textarea>
+                        </label>
+                    </section>
+
+                    <section class="section-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">Extensions</p>
+                                <h3>常用扩展字段</h3>
+                            </div>
+                        </div>
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>概率 probability</span>
+                                <input id="entryProbability" type="number" min="0" max="100" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>分组 group</span>
+                                <input id="entryGroup" type="text" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>出口 outlet_name</span>
+                                <input id="entryOutletName" type="text" class="text-input">
+                            </label>
+                        </div>
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>角色 role</span>
+                                <select id="entryRole" class="text-input">
+                                    <option value="0">0 SYSTEM</option>
+                                    <option value="1">1 USER</option>
+                                    <option value="2">2 ASSISTANT</option>
+                                </select>
+                            </label>
+                            <label class="field">
+                                <span>Automation ID</span>
+                                <input id="entryAutomationId" type="text" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>Scan Depth</span>
+                                <input id="entryScanDepth" type="number" class="text-input" placeholder="null">
+                            </label>
+                        </div>
+                        <div class="toggle-grid">
+                            <label class="toggle-field"><input id="entryUseProbability" type="checkbox"> useProbability</label>
+                            <label class="toggle-field"><input id="entryVectorized" type="checkbox"> vectorized</label>
+                            <label class="toggle-field"><input id="entryExcludeRecursion" type="checkbox"> exclude_recursion</label>
+                            <label class="toggle-field"><input id="entryPreventRecursion" type="checkbox"> prevent_recursion</label>
+                            <label class="toggle-field"><input id="entryIgnoreBudget" type="checkbox"> ignore_budget</label>
+                        </div>
+                    </section>
+
+                    <section class="section-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">Advanced</p>
+                                <h3>高级 JSON</h3>
+                            </div>
+                            <div class="section-actions">
+                                <button id="entryResetRawButton" class="button button-secondary" type="button">重置</button>
+                                <button id="entryApplyRawButton" class="button button-primary" type="button">应用 JSON</button>
+                            </div>
+                        </div>
+                        <textarea id="entryRawJson" class="text-area code-area"></textarea>
+                    </section>
+                </form>
+
+                <form id="regexForm" class="editor-form" hidden>
+                    <div class="form-header">
+                        <div>
+                            <p id="regexIdentity" class="section-kicker">Regex</p>
+                            <h2 id="regexHeading">正则脚本</h2>
+                        </div>
+                    </div>
+
+                    <section class="section-card">
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>ID</span>
+                                <input id="regexId" type="text" class="text-input" readonly>
+                            </label>
+                            <label class="field">
+                                <span>脚本名</span>
+                                <input id="regexName" type="text" class="text-input">
+                            </label>
+                            <label class="field">
+                                <span>替换模式</span>
+                                <select id="regexSubstituteMode" class="text-input">
+                                    <option value="0">0 NONE</option>
+                                    <option value="1">1 RAW</option>
+                                    <option value="2">2 ESCAPED</option>
+                                </select>
+                            </label>
+                        </div>
+                        <div class="field-grid three-columns">
+                            <label class="field">
+                                <span>最小层数</span>
+                                <input id="regexMinDepth" type="number" class="text-input" placeholder="null">
+                            </label>
+                            <label class="field">
+                                <span>最大层数</span>
+                                <input id="regexMaxDepth" type="number" class="text-input" placeholder="null">
+                            </label>
+                            <label class="field">
+                                <span>Trim Strings</span>
+                                <textarea id="regexTrimStrings" class="text-area small-area" placeholder="每行一个字符串"></textarea>
+                            </label>
+                        </div>
+                        <div class="toggle-grid">
+                            <label class="toggle-field"><input id="regexDisabled" type="checkbox"> disabled</label>
+                            <label class="toggle-field"><input id="regexRunOnEdit" type="checkbox"> runOnEdit</label>
+                            <label class="toggle-field"><input id="regexMarkdownOnly" type="checkbox"> markdownOnly</label>
+                            <label class="toggle-field"><input id="regexPromptOnly" type="checkbox"> promptOnly</label>
+                        </div>
+                    </section>
+
+                    <section class="section-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">Placement</p>
+                                <h3>执行位置</h3>
+                            </div>
+                        </div>
+                        <div class="checkbox-matrix">
+                            <label class="toggle-field"><input class="regex-placement" type="checkbox" value="1"> 1 USER_INPUT</label>
+                            <label class="toggle-field"><input class="regex-placement" type="checkbox" value="2"> 2 AI_OUTPUT</label>
+                            <label class="toggle-field"><input class="regex-placement" type="checkbox" value="3"> 3 SLASH_COMMAND</label>
+                            <label class="toggle-field"><input class="regex-placement" type="checkbox" value="5"> 5 WORLD_INFO</label>
+                            <label class="toggle-field"><input class="regex-placement" type="checkbox" value="6"> 6 REASONING</label>
+                        </div>
+                    </section>
+
+                    <section class="section-card">
+                        <label class="field">
+                            <span>findRegex</span>
+                            <textarea id="regexFindRegex" class="text-area medium-area code-area"></textarea>
+                        </label>
+                        <label class="field">
+                            <span>replaceString</span>
+                            <textarea id="regexReplaceString" class="text-area large-area code-area"></textarea>
+                        </label>
+                    </section>
+
+                    <section class="section-card">
+                        <div class="section-heading">
+                            <div>
+                                <p class="section-kicker">Advanced</p>
+                                <h3>高级 JSON</h3>
+                            </div>
+                            <div class="section-actions">
+                                <button id="regexResetRawButton" class="button button-secondary" type="button">重置</button>
+                                <button id="regexApplyRawButton" class="button button-primary" type="button">应用 JSON</button>
+                            </div>
+                        </div>
+                        <textarea id="regexRawJson" class="text-area code-area"></textarea>
+                    </section>
+                </form>
+            </section>
+        </section>
+    </div>
+
+    <script type="module" src="/scripts/character-card-editor.js"></script>
+</body>
+</html>
