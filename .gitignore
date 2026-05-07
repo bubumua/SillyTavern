@@ -61,7 +61,6 @@ test-results/
 
 # custom
 config.*yaml
-LearnAbout/
 preset_and_chara/__pycache__/
 preset_and_chara/.vscode/
 default-user/assets/
