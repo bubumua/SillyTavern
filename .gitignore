@@ -60,6 +60,8 @@ yarn.lock
 test-results/
 
 # custom
+.vscode
+**/.vscode/
 config.*yaml
 preset_and_chara/__pycache__/
 preset_and_chara/.vscode/
